@@ -24,15 +24,17 @@
 # LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
+
+# Modifications by Georg Limbach (georf@georf.de) since version 1.5
  
 # Based on a script written by Liz Quilty ( liz@rimuhosting.com )
-# Run as root
-# sudo sh wp-upgrade.sh
  
+# version 1.5 - no root privilege needs, read current version from remote
 # version 1.4 - refactored to use functions, curl and tar and removed WordPress MU 
 # support (AB).
 # version 1.3 - keeping the permissions so that the web user can write to things OK (LQ)
 # version 1.2 - Patched for better portability by http://twitter.com/valthonis (LQ)
+
  
 #Set exit on any error.
 set -e
@@ -131,13 +133,13 @@ get_latest_wp() {
   mkdir -p $WP_SOURCE_DIR
   cd $WP_SOURCE_DIR
   echo 'Getting latest version of WordPress... (removing previous download if any).'
-  rm -rf ${WP_SOURCE_DIR}/latest.tar.gz
   rm -rf ${WP_SOURCE_DIR}/wordpress
-  curl -O $WP_URL && tar -xmzf latest.tar.gz && chown -R $(get_owner_group $WP_SOURCE_DIR) ${WP_SOURCE_DIR}/wordpress/
+  curl -z latest.tar.gz -O $WP_URL && tar -xmzf latest.tar.gz && chown -R $(get_owner_group $WP_SOURCE_DIR) ${WP_SOURCE_DIR}/wordpress/
   if [ $? -ne 0 ]; then
     echo "Download of the latest version of WordPress failed."
     exit 1
   fi
+  WP_CURRENT_VERSION=$(get_installed_version ${WP_SOURCE_DIR}/wordpress/wp-includes/version.php)
   cd - > /dev/null
   echo 'Done.'
 }
@@ -215,27 +217,24 @@ do_upgrade() {
  
 ###~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
 # Let's start...
-if [ $(whoami) != "root" ]
-  then
-  echo "You need to run this script as root (preferably via sudo)."
-  exit 1
-fi
  
 # Download and extract the latest version of WordPress
 get_latest_wp
- 
+
 # Find all of our target WordPress installations
-wplist=$(find $FIND_DIR -wholename "*wp-includes/version.php")
- 
-for file in $wplist ; do
+wp_list=$(find $FIND_DIR -type d ! -readable ! -executable -prune -o -type f -user `whoami` -perm -u+rw -wholename "*wp-includes/version.php") 
+for file in $wp_list
+do
   wp_root=$(get_wp_root $file)
-  installed_ver=$(get_installed_version $file)
+  installed_version=$(get_installed_version $file)
  
-  if [ ${installed_ver} !=  ${WP_CURRENT_VER} ];then
-    echo "You have version $installed_ver located at $wp_root that needs upgrading to $WP_CURRENT_VER"
+  if [ ${installed_version} !=  ${WP_CURRENT_VERSION} ]
+  then
+    echo "You have version $installed_ver located at $wp_root that needs upgrading to $WP_CURRENT_VERSION"
     echo -n "Would you like to upgrade it? [y/N] "
     read ans
-    if [ ! -z "$ans" -a "$ans" == "y" ];then #Fixed: Default non key entry now correctly equivalent to No.
+    if [ ! -z "$ans" -a "$ans" == "y" ]
+    then
       do_upgrade $wp_root
     else
       echo "Skipping ${wp_root}."
